@@ -1,0 +1,5 @@
+{
+    "platform": "docker",
+    "app": "coach-backend-api",
+    "port": 3000
+}

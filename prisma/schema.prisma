@@ -1,0 +1,312 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// A. Identity & Core (هویت و هسته)
+// ============================================
+
+enum UserRole {
+  COACH
+  CLIENT
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  firstName String?  @map("first_name")
+  lastName  String?  @map("last_name")
+  phone     String?
+  role      UserRole @default(CLIENT)
+  coachId   String?  @map("coach_id")
+  coach     User?    @relation("CoachClients", fields: [coachId], references: [id])
+  clients   User[]   @relation("CoachClients")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  programsCreated     Program[]
+  workoutLogs         WorkoutLog[]
+  clientPbs           ClientPb[]
+  nutritionPlans      NutritionPlan[]
+  dailyNutritionLogs  DailyNutritionLog[]
+  sentMessages        Message[]            @relation("SentMessages")
+  receivedMessages    Message[]            @relation("ReceivedMessages")
+  checkIns            CheckIn[]
+  automatedTriggers   AutomatedTrigger[]
+
+  @@map("users")
+}
+
+enum MuscleGroup {
+  CHEST
+  BACK
+  SHOULDERS
+  BICEPS
+  TRICEPS
+  LEGS
+  GLUTES
+  ABS
+  FOREARMS
+  CALVES
+  CARDIO
+  FULL_BODY
+}
+
+model MovementCatalog {
+  id          Int         @id @default(autoincrement())
+  nameFa      String      @map("name_fa")
+  nameEn      String?     @map("name_en")
+  muscleGroup MuscleGroup @map("muscle_group")
+  isCompound  Boolean     @default(false) @map("is_compound")
+  description String?
+  imageUrl    String?     @map("image_url")
+  videoUrl    String?     @map("video_url")
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  // Relations
+  programExercises ProgramExercise[]
+  setLogs          SetLog[]
+  clientPbs        ClientPb[]
+
+  @@map("movements_catalog")
+}
+
+// ============================================
+// B. Workout Program & Logs (برنامه تمرینی و لاگ‌ها)
+// ============================================
+
+model Program {
+  id          Int      @id @default(autoincrement())
+  coachId     String   @map("coach_id")
+  coach       User     @relation(fields: [coachId], references: [id])
+  name        String
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  workouts ProgramWorkout[]
+
+  @@map("programs")
+}
+
+model ProgramWorkout {
+  id         Int     @id @default(autoincrement())
+  programId  Int     @map("program_id")
+  program    Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+  dayName    String  @map("day_name") // e.g., "شنبه - سینه و جلوبازو"
+  orderIndex Int     @map("order_index")
+
+  // Relations
+  exercises   ProgramExercise[]
+  workoutLogs WorkoutLog[]
+
+  @@map("program_workouts")
+}
+
+model ProgramExercise {
+  id               Int             @id @default(autoincrement())
+  workoutId        Int             @map("workout_id")
+  workout          ProgramWorkout  @relation(fields: [workoutId], references: [id], onDelete: Cascade)
+  movementId       Int             @map("movement_id")
+  movement         MovementCatalog @relation(fields: [movementId], references: [id])
+  suggestedSets    Int             @map("suggested_sets")
+  suggestedReps    Int             @map("suggested_reps")
+  suggestedRestSec Int             @default(90) @map("suggested_rest_sec")
+  orderIndex       Int             @map("order_index")
+  supersetWith     Int?            @map("superset_with") // ID of paired exercise
+  notes            String?
+
+  @@map("program_exercises")
+}
+
+model WorkoutLog {
+  id              Int            @id @default(autoincrement())
+  clientId        String         @map("client_id")
+  client          User           @relation(fields: [clientId], references: [id])
+  programWorkoutId Int           @map("program_workout_id")
+  programWorkout  ProgramWorkout @relation(fields: [programWorkoutId], references: [id])
+  dateCompleted   DateTime       @map("date_completed")
+  durationMinutes Int?           @map("duration_minutes")
+  notes           String?
+  createdAt       DateTime       @default(now()) @map("created_at")
+
+  // Relations
+  setLogs SetLog[]
+
+  @@map("workout_logs")
+}
+
+model SetLog {
+  id           Int             @id @default(autoincrement())
+  workoutLogId Int             @map("workout_log_id")
+  workoutLog   WorkoutLog      @relation(fields: [workoutLogId], references: [id], onDelete: Cascade)
+  movementId   Int             @map("movement_id")
+  movement     MovementCatalog @relation(fields: [movementId], references: [id])
+  setNumber    Int             @map("set_number")
+  weightKg     Decimal         @map("weight_kg") @db.Decimal(6, 2)
+  reps         Int
+  rpe          Int?            // Rate of Perceived Exertion (1-10)
+  notes        String?
+  createdAt    DateTime        @default(now()) @map("created_at")
+
+  @@map("set_logs")
+}
+
+model ClientPb {
+  id                 Int             @id @default(autoincrement())
+  clientId           String          @map("client_id")
+  client             User            @relation(fields: [clientId], references: [id])
+  movementId         Int             @map("movement_id")
+  movement           MovementCatalog @relation(fields: [movementId], references: [id])
+  maxWeightKg        Decimal         @map("max_weight_kg") @db.Decimal(6, 2)
+  maxRepsAtMaxWeight Int             @map("max_reps_at_max_weight")
+  dateAchieved       DateTime        @map("date_achieved")
+  createdAt          DateTime        @default(now()) @map("created_at")
+  updatedAt          DateTime        @updatedAt @map("updated_at")
+
+  @@unique([clientId, movementId])
+  @@map("client_pbs")
+}
+
+// ============================================
+// C. Nutrition & Meal Tracking (رژیم و تغذیه)
+// ============================================
+
+model NutritionPlan {
+  id              Int      @id @default(autoincrement())
+  clientId        String   @map("client_id")
+  client          User     @relation(fields: [clientId], references: [id])
+  targetCalories  Int      @map("target_calories")
+  targetProteinG  Int      @map("target_protein_g")
+  targetCarbsG    Int?     @map("target_carbs_g")
+  targetFatG      Int?     @map("target_fat_g")
+  startDate       DateTime @map("start_date")
+  endDate         DateTime? @map("end_date")
+  isActive        Boolean  @default(true) @map("is_active")
+  notes           String?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("nutrition_plans")
+}
+
+model DailyNutritionLog {
+  id             Int       @id @default(autoincrement())
+  clientId       String    @map("client_id")
+  client         User      @relation(fields: [clientId], references: [id])
+  date           DateTime  @db.Date
+  actualCalories Int?      @map("actual_calories")
+  actualProteinG Int?      @map("actual_protein_g")
+  actualCarbsG   Int?      @map("actual_carbs_g")
+  actualFatG     Int?      @map("actual_fat_g")
+  isCompliant    Boolean   @default(false) @map("is_compliant")
+  coachNotes     String?   @map("coach_notes")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  mealItems MealItemLog[]
+
+  @@unique([clientId, date])
+  @@map("daily_nutrition_logs")
+}
+
+model MealItemLog {
+  id              Int               @id @default(autoincrement())
+  dailyLogId      Int               @map("daily_log_id")
+  dailyLog        DailyNutritionLog @relation(fields: [dailyLogId], references: [id], onDelete: Cascade)
+  mealType        String            @map("meal_type") // breakfast, lunch, dinner, snack
+  foodName        String            @map("food_name")
+  quantity        String?
+  calories        Int?
+  proteinG        Int?              @map("protein_g")
+  carbsG          Int?              @map("carbs_g")
+  fatG            Int?              @map("fat_g")
+  photoUrl        String?           @map("photo_url")
+  macroBreakdown  Json?             @map("macro_breakdown")
+  createdAt       DateTime          @default(now()) @map("created_at")
+
+  @@map("meal_items_log")
+}
+
+// ============================================
+// D. Communication & Automation (ارتباطات و فالوآپ)
+// ============================================
+
+enum MessageContextType {
+  GENERAL
+  WORKOUT
+  NUTRITION
+  CHECK_IN
+}
+
+model Message {
+  id          Int                @id @default(autoincrement())
+  senderId    String             @map("sender_id")
+  sender      User               @relation("SentMessages", fields: [senderId], references: [id])
+  receiverId  String             @map("receiver_id")
+  receiver    User               @relation("ReceivedMessages", fields: [receiverId], references: [id])
+  content     String
+  isRead      Boolean            @default(false) @map("is_read")
+  contextType MessageContextType @default(GENERAL) @map("context_type")
+  contextId   Int?               @map("context_id") // Reference to workout/nutrition log
+  createdAt   DateTime           @default(now()) @map("created_at")
+
+  @@map("messages")
+}
+
+model CheckIn {
+  id           Int      @id @default(autoincrement())
+  clientId     String   @map("client_id")
+  client       User     @relation(fields: [clientId], references: [id])
+  weekNumber   Int      @map("week_number")
+  weightKg     Decimal? @map("weight_kg") @db.Decimal(5, 2)
+  waistCm      Decimal? @map("waist_cm") @db.Decimal(5, 2)
+  sleepScore   Int?     @map("sleep_score") // 1-10
+  energyLevel  Int?     @map("energy_level") // 1-10
+  stressLevel  Int?     @map("stress_level") // 1-10
+  photos       String[] // Array of URLs
+  notes        String?
+  coachReview  String?  @map("coach_review")
+  isReviewed   Boolean  @default(false) @map("is_reviewed")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@unique([clientId, weekNumber])
+  @@map("check_ins")
+}
+
+enum TriggerType {
+  NO_LOG           // Client hasn't logged workout
+  PB_ACHIEVED      // Personal best achieved
+  MACRO_FAIL       // Nutrition goals not met
+  CHECK_IN_DUE     // Weekly check-in reminder
+  STREAK_BROKEN    // Workout streak broken
+}
+
+model AutomatedTrigger {
+  id              Int         @id @default(autoincrement())
+  coachId         String      @map("coach_id")
+  coach           User        @relation(fields: [coachId], references: [id])
+  triggerType     TriggerType @map("trigger_type")
+  messageTemplate String      @map("message_template")
+  isActive        Boolean     @default(true) @map("is_active")
+  delayMinutes    Int         @default(60) @map("delay_minutes") // Delay before sending
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  @@unique([coachId, triggerType])
+  @@map("automated_triggers")
+}
